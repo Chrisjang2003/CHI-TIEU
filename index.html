@@ -8851,6 +8851,62 @@ body.v55-transitioning .v55-transition-glow{
   setInterval(()=>{if(document.getElementById('view-work-planning')){migrate();render()}},5000);
 })();
 </script>
+const GH = { owner: 'TEN_GITHUB_CUA_BAN', repo: 'app-data', path: 'data.json', branch: 'main' };
+const API = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}`;
+let fileSha = null;
 
+function getToken() {
+  let t = localStorage.getItem('gh_token');
+  if (!t) {
+    t = prompt('Nhập GitHub token (chỉ cần nhập 1 lần trên máy này):');
+    if (t) localStorage.setItem('gh_token', t.trim());
+  }
+  return t;
+}
+const authHeaders = () => ({
+  Authorization: `Bearer ${getToken()}`,
+  Accept: 'application/vnd.github+json',
+});
+
+// Hỗ trợ tiếng Việt (UTF-8) khi mã hóa base64
+const toB64 = s => btoa(unescape(encodeURIComponent(s)));
+const fromB64 = b => decodeURIComponent(escape(atob(b.replace(/\n/g, ''))));
+
+async function loadData() {
+  const res = await fetch(`${API}?ref=${GH.branch}&t=${Date.now()}`, { headers: authHeaders() });
+  if (res.status === 404) return null;            // chưa có file
+  if (!res.ok) throw new Error('Load lỗi: ' + res.status);
+  const json = await res.json();
+  fileSha = json.sha;
+  return JSON.parse(fromB64(json.content));
+}
+
+async function saveData(data) {
+  const body = {
+    message: 'update ' + new Date().toISOString(),
+    content: toB64(JSON.stringify(data, null, 2)),
+    branch: GH.branch,
+  };
+  if (fileSha) body.sha = fileSha;
+  const res = await fetch(API, {
+    method: 'PUT',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 409) throw new Error('Dữ liệu đã bị thay đổi từ máy khác, hãy tải lại.');
+  if (!res.ok) throw new Error('Save lỗi: ' + res.status);
+  fileSha = (await res.json()).content.sha;
+}
+
+// Dùng thử: tự tải khi mở app, tự lưu sau khi người dùng ngừng thao tác 1.5 giây
+let timer;
+function autoSave(data) {
+  clearTimeout(timer);
+  timer = setTimeout(() => saveData(data).catch(e => alert(e.message)), 1500);
+}
+window.addEventListener('load', async () => {
+  const data = await loadData();
+  if (data) { /* TODO: đưa dữ liệu vào app của bạn */ }
+});
 </body>
 </html>
