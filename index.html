@@ -8851,6 +8851,90 @@ body.v55-transitioning .v55-transition-glow{
   setInterval(()=>{if(document.getElementById('view-work-planning')){migrate();render()}},5000);
 })();
 </script>
+<input id="token" type="password" placeholder="GitHub token" autocomplete="off">
+<textarea id="editor" rows="12">{}</textarea>
+<button id="load">Tải data.json</button>
+<button id="save">Lưu vào GitHub</button>
+<pre id="status"></pre>
 
+<script>
+  const cfg = {
+    owner: "chrisjang2003",
+    repo: "app-data1",
+    branch: "main",
+    path: "data.json"
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const apiUrl = () =>
+    `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}`;
+
+  function headers() {
+    return {
+      "Accept": "application/vnd.github+json",
+      "Authorization": `Bearer ${$("token").value.trim()}`,
+      "X-GitHub-Api-Version": "2026-03-10"
+    };
+  }
+
+  function base64Utf8(text) {
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    bytes.forEach(b => binary += String.fromCharCode(b));
+    return btoa(binary);
+  }
+
+  function decodeBase64Utf8(base64) {
+    const bytes = Uint8Array.from(atob(base64.replace(/\n/g, "")), c => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  }
+
+  async function loadData() {
+    const res = await fetch(`${apiUrl()}?ref=${encodeURIComponent(cfg.branch)}`, {
+      headers: headers()
+    });
+
+    if (res.status === 404) {
+      $("editor").value = "{}";
+      $("status").textContent = "Chưa có data.json — bấm Lưu để tạo.";
+      return null;
+    }
+
+    if (!res.ok) throw new Error(await res.text());
+
+    const file = await res.json();
+    $("editor").value = decodeBase64Utf8(file.content);
+    $("status").textContent = "Đã tải data.json";
+    return file.sha;
+  }
+
+  async function saveData() {
+    JSON.parse($("editor").value); // Bảo đảm JSON hợp lệ
+
+    const current = await fetch(`${apiUrl()}?ref=${encodeURIComponent(cfg.branch)}`, {
+      headers: headers()
+    });
+    const sha = current.ok ? (await current.json()).sha : undefined;
+
+    const body = {
+      message: "Cập nhật dữ liệu từ app",
+      content: base64Utf8($("editor").value),
+      branch: cfg.branch
+    };
+    if (sha) body.sha = sha;
+
+    const res = await fetch(apiUrl(), {
+      method: "PUT",
+      headers: { ...headers(), "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) throw new Error(await res.text());
+    $("status").textContent = "Đã lưu vào GitHub.";
+  }
+
+  $("load").onclick = () => loadData().catch(e => $("status").textContent = e.message);
+  $("save").onclick = () => saveData().catch(e => $("status").textContent = e.message);
+</script>
 </body>
 </html>
