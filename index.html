@@ -7,9 +7,11 @@
     <!-- v81: automatic sync mode · local auto refresh + carry-forward + recurring + health -->
     <!-- Tailwind CSS, Chart.js, Lucide Icons -->
     <!--
-  ===== GITHUB SYNC – BẢN MƯỢT, TỰ ĐỘNG HOÀN TOÀN (localStorage) =====
+  <!--
+  ===== GITHUB SYNC – ĐỒNG BỘ MỖI KHI CÓ THAY ĐỔI (localStorage) =====
   Dán NGUYÊN khối này 1 lần vào file HTML của app: tốt nhất đặt trong <head>.
-  Thiết lập 1 lần trên mỗi máy; những lần sau mở app là tự đồng bộ, không hỏi gì.
+  Thiết lập 1 lần trên mỗi máy. Sau đó, mỗi lần bạn thao tác làm dữ liệu thay đổi là app tự đồng bộ, không hỏi gì.
+  Mở app là đồng bộ NGAY (kéo dữ liệu mới từ máy khác + đẩy thay đổi chưa lưu), sau đó mỗi thao tác thay đổi tiếp tục tự đồng bộ.
   Thiết lập nhanh máy mới: mở link app kèm  #ghs=TOKEN&owner=TENBAN&repo=app-data  (chỉ cần 1 lần, script tự xóa phần # khỏi thanh địa chỉ).
 -->
 <script>
@@ -26,8 +28,10 @@
     const PRESET = {
         owner: '', repo: '', branch: 'main',
         path: '',          // trống = tự đặt theo địa chỉ trang
-        waitMs: 0          // 0 = app mở NGAY, đồng bộ chạy nền sau khi app tải xong (mượt nhất).
-                           // Đặt 500-800 nếu muốn chờ dữ liệu mới từ máy khác trước khi hiện trang.
+        delayMs: 1000,     // sau thao tác thay đổi cuối cùng, chờ bấy nhiêu ms rồi đồng bộ (gộp các thao tác liên tiếp thành 1 lần)
+        pullOnOpen: true,  // true  = mở app/quay lại tab là đồng bộ ngay (mặc định), rồi tiếp tục đồng bộ mỗi khi có thay đổi
+                           // false = chỉ đồng bộ khi có thay đổi (mở app không gọi GitHub)
+        waitMs: 0          // chỉ dùng khi pullOnOpen = true: 0 = app mở ngay; 500-800 = chờ dữ liệu mới trước khi hiện trang
     };
     // ==============================================================================================================
 
@@ -154,7 +158,7 @@
         off:   ['off',   'GitHub Sync',   'Chưa kết nối.'],
         ok:    ['ok',    'Đã đồng bộ',    'Dữ liệu đã khớp với GitHub.'],
         sync:  ['sync',  'Đang đồng bộ…', 'Đang trao đổi dữ liệu với GitHub…'],
-        dirty: ['dirty', 'Chờ lưu…',      'Có thay đổi, sẽ tự lưu lên GitHub sau vài giây.'],
+        dirty: ['dirty', 'Chờ lưu…',      'Có thay đổi, sắp tự đồng bộ lên GitHub.'],
         err:   ['err',   'Lỗi đồng bộ',   'Đồng bộ lỗi.']
     };
     function setStatus(state, msg) {
@@ -316,7 +320,7 @@
     }
     function autoSync() { runSync().then(r => { if (r.reload) reloadOnce(); }); }
 
-    // Gọi ngay khi app ghi/xóa dữ liệu. Chờ yên 3 giây rồi lưu vào lúc trình duyệt rảnh, nên không giật khi đang dùng app.
+    // Gọi ngay khi app ghi/xóa dữ liệu. Chờ yên delayMs rồi đồng bộ (vào lúc trình duyệt rảnh, nên không giật khi đang dùng app).
     function noteChange() {
         if (!configured()) return;
         changeSeq++;
@@ -324,7 +328,7 @@
         meta.dirty = true; meta.localChangedAt = Date.now();
         if (!was) saveMeta();
         clearTimeout(pushTimer);
-        pushTimer = setTimeout(() => { saveMeta(); whenIdle(autoSync, 8000); }, 3000);
+        pushTimer = setTimeout(() => { saveMeta(); whenIdle(autoSync, 1500); }, PRESET.delayMs >= 0 ? PRESET.delayMs : 1000);
         if (!syncing && cur.state !== 'dirty') setStatus('dirty');
     }
 
@@ -374,6 +378,7 @@
             if (meta.dirty) { saveMeta(); autoSync(); }
             return;
         }
+        if (!PRESET.pullOnOpen) return;                                   // chế độ "chỉ khi có thay đổi": quay lại tab không gọi GitHub
         if (!meta.dirty && Date.now() - lastCheckAt < 15000) return;      // vừa kiểm tra xong, khỏi gọi lại
         autoSync();                                                       // quay lại: kéo dữ liệu mới từ máy khác
     });
@@ -434,7 +439,7 @@ button.d{background:#450a0a;color:#fca5a5;grid-column:1/-1}
     <button class="b d" id="off" type="button">Ngắt kết nối máy này</button>
   </div>
   <pre class="keys" id="keys" style="display:none"></pre>
-  <p class="note">Sau khi kết nối, app tự đồng bộ mỗi lần mở, mỗi khi dữ liệu đổi và khi quay lại tab, không hỏi gì thêm. Nếu 2 máy cùng sửa 1 mục, bản sửa sau cùng thắng; trước khi bị thay thế, dữ liệu máy này được sao lưu 1 bản (nút "Khôi phục"), còn trên GitHub có lịch sử commit. Chỉ đồng bộ localStorage; file lớn trong IndexedDB không đồng bộ. Dữ liệu (kể cả mật khẩu/token nếu app có lưu) nằm trong repo nên hãy dùng repo private. Nhiều app cùng địa chỉ github.io dùng chung localStorage: dùng ô "Chỉ đồng bộ" để giới hạn đúng key của app này.</p>
+  <p class="note">Sau khi kết nối, app tự đồng bộ mỗi khi bạn thao tác làm dữ liệu thay đổi, không hỏi gì thêm. Mở app (hoặc quay lại tab) là đồng bộ ngay để lấy dữ liệu mới từ máy khác, sau đó mỗi thay đổi tiếp tục được tự đồng bộ. Nếu 2 máy cùng sửa 1 mục, bản sửa sau cùng thắng; trước khi bị thay thế, dữ liệu máy này được sao lưu 1 bản (nút "Khôi phục"), còn trên GitHub có lịch sử commit. Chỉ đồng bộ localStorage; file lớn trong IndexedDB không đồng bộ. Dữ liệu (kể cả mật khẩu/token nếu app có lưu) nằm trong repo nên hãy dùng repo private. Nhiều app cùng địa chỉ github.io dùng chung localStorage: dùng ô "Chỉ đồng bộ" để giới hạn đúng key của app này.</p>
 </div></div>`;
         (document.body || document.documentElement).appendChild(host);
         const $ = id => root.getElementById(id);
@@ -515,12 +520,19 @@ button.d{background:#450a0a;color:#fca5a5;grid-column:1/-1}
     const startUI = () => whenIdle(buildUI, 3000);
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startUI); else startUI();
 
-    // ---------- Khởi động: để app tải xong rồi mới đồng bộ ----------
+    // ---------- Khởi động ----------
     function boot() {
         if (!configured()) return;
+        // Chỉ đồng bộ ngay khi mở app nếu: (1) có thay đổi chưa kịp lưu từ lần trước, (2) máy chưa từng đồng bộ, hoặc (3) bạn bật pullOnOpen.
+        const needNow = PRESET.pullOnOpen || meta.dirty || !meta.base;
+        if (!needNow) {
+            setStatus('ok', 'Tự đồng bộ mỗi khi có thay đổi. Bấm "Đồng bộ ngay" để kéo dữ liệu mới từ máy khác.');
+            startWatching();
+            return;
+        }
         const de = document.documentElement;
         let failsafe = null;
-        if (PRESET.waitMs > 0) { de.style.visibility = 'hidden'; failsafe = setTimeout(() => { de.style.visibility = ''; }, PRESET.waitMs); }
+        if (PRESET.pullOnOpen && PRESET.waitMs > 0) { de.style.visibility = 'hidden'; failsafe = setTimeout(() => { de.style.visibility = ''; }, PRESET.waitMs); }
         (async () => {
             const res = await runSync();
             if (res.reload && reloadOnce()) return;           // đang tải lại trang với dữ liệu mới
@@ -528,7 +540,7 @@ button.d{background:#450a0a;color:#fca5a5;grid-column:1/-1}
             startWatching();
         })();
     }
-    if (PRESET.waitMs > 0) boot();                            // chế độ chờ: chạy ngay
+    if (PRESET.pullOnOpen) boot();                            // đồng bộ NGAY khi mở app, không chờ trình duyệt rảnh
     else if (document.readyState === 'complete') whenIdle(boot, 3000);
     else window.addEventListener('load', () => whenIdle(boot, 3000));
 })();
